@@ -9,17 +9,22 @@ import { createUser } from "../services/userService";
 
 export default function Wallet(props) {
     let { setUser, setRefreshTransactions } = props;
+
     const [amount, setAmount] = useState("");
     const [balance, setBalance] = useState(0);
     const [loading, setLoading] = useState(false);
+
     const [showModal, setShowModal] = useState(false);
-    const transactionId = "txn_" + Date.now();
+    const [showPinModal, setShowPinModal] = useState(false);
+
     const [action, setAction] = useState("");
+
+    const transactionId = "txn_" + Date.now();
 
     const fetchBalance = async () => {
         try {
             const res = await getWalletBalance();
-            setBalance(res?.data?.data?.balance);
+            setBalance(res?.data?.data?.balance || 0);
         } catch (err) {
             console.error(err);
         }
@@ -27,7 +32,7 @@ export default function Wallet(props) {
 
     useEffect(() => {
         fetchBalance();
-    }, [amount]);
+    }, []);
 
     const checkToken = () => {
         const token = localStorage.getItem("wallet-token");
@@ -38,53 +43,72 @@ export default function Wallet(props) {
         return true;
     };
 
-    const handleAddBalance = async () => {
+    const handleAddBalance = () => {
         if (!amount) return alert("Enter amount");
         if (!checkToken()) return;
 
-        try {
-            setLoading(true);
-            setAction('add');
-            await addWalletBalance({ balance: Number(amount), transactionId });
-            alert("Balance added successfully");
-            setAmount("");
-            fetchBalance();
-            setRefreshTransactions(prev => !prev);
-            setAction("");
-        } catch (err) {
-            alert(err.response?.data?.message || "Something went wrong");
-        } finally {
-            setLoading(false);
-        }
+        setAction("add");
+        setShowPinModal(true);
     };
 
-    const handleWithdraw = async () => {
+    const handleWithdraw = () => {
         if (!amount) return alert("Enter amount");
         if (!checkToken()) return;
 
+        setAction("withdraw");
+        setShowPinModal(true);
+    };
+
+    const handlePinSubmit = async (data) => {
+        const pin = data.transaction_pin;
+
         try {
             setLoading(true);
-            setAction('withdraw')
-            await withdrawWalletBalance({ amount: Number(amount), transactionId });
-            alert("Withdrawal successful");
+
+            if (action === "add") {
+                await addWalletBalance({
+                    balance: Number(amount),
+                    transactionId,
+                    transaction_pin: pin,
+                });
+
+                alert("Balance added successfully");
+            }
+
+            if (action === "withdraw") {
+                await withdrawWalletBalance({
+                    amount: Number(amount),
+                    transactionId,
+                    transaction_pin: pin,
+                });
+
+                alert("Withdrawal successful");
+            }
+
             setAmount("");
             fetchBalance();
-            setRefreshTransactions(prev => !prev);
-            setAction("");
+            setRefreshTransactions((prev) => !prev);
         } catch (err) {
-            alert(err.response?.data?.message || "Something went wrong");
+            alert(err.response?.data?.message || "Transaction failed");
         } finally {
             setLoading(false);
+            setShowPinModal(false);
+            setAction("");
         }
     };
 
     const handleUserSubmit = async (data) => {
         try {
-            const payload = { name: data.name, email: data.email };
+            const payload = {
+                name: data.name,
+                email: data.email,
+                transaction_pin: data.pin
+            };
+
             const res = await createUser(payload);
             const user = res?.data?.data;
-            localStorage.setItem("wallet-token", res?.data?.data?.token);
-            localStorage.setItem("wallet-user", JSON.stringify(res?.data?.data));
+            localStorage.setItem("wallet-token", user?.token);
+            localStorage.setItem("wallet-user", JSON.stringify(user));
             setUser(user);
             alert("User authenticated successfully");
             setShowModal(false);
@@ -96,6 +120,7 @@ export default function Wallet(props) {
     return (
         <div style={{ width: "300px", textAlign: "center", margin: "auto" }}>
             <h2>Wallet Balance</h2>
+
             <h1>₹ {balance}</h1>
 
             <input
@@ -111,17 +136,31 @@ export default function Wallet(props) {
                 <button
                     onClick={handleAddBalance}
                     disabled={loading}
-                    style={{ flex: 1, padding: "10px", background: "green", color: "#fff", cursor: 'pointer' }}
+                    style={{
+                        flex: 1,
+                        padding: "10px",
+                        background: "green",
+                        color: "#fff",
+                        cursor: "pointer",
+                    }}
                 >
-                    {loading && action === 'add' ? 'Processing...' : 'Add Balance'}
+                    {loading && action === "add" ? "Processing..." : "Add Balance"}
                 </button>
 
                 <button
                     onClick={handleWithdraw}
                     disabled={loading}
-                    style={{ flex: 1, padding: "10px", background: "red", color: "#fff", cursor: 'pointer' }}
+                    style={{
+                        flex: 1,
+                        padding: "10px",
+                        background: "red",
+                        color: "#fff",
+                        cursor: "pointer",
+                    }}
                 >
-                    {loading && action === 'withdraw' ? 'Processing...' : 'Withdraw'}
+                    {loading && action === "withdraw"
+                        ? "Processing..."
+                        : "Withdraw"}
                 </button>
             </div>
 
@@ -139,9 +178,29 @@ export default function Wallet(props) {
                             type: "email",
                             placeholder: "Enter your email",
                         },
+                        {
+                            name: "pin",
+                            type: "text",
+                            placeholder: "Set your transaction PIN",
+                        },
                     ]}
                     onSubmit={handleUserSubmit}
                     onClose={() => setShowModal(false)}
+                />
+            )}
+
+            {showPinModal && (
+                <ModalForm
+                    title="Enter Transaction PIN"
+                    fields={[
+                        {
+                            name: "transaction_pin",
+                            type: "text",
+                            placeholder: "Enter your transaction PIN",
+                        },
+                    ]}
+                    onSubmit={handlePinSubmit}
+                    onClose={() => setShowPinModal(false)}
                 />
             )}
         </div>
